@@ -955,23 +955,12 @@ function formatShareText(list) {
 async function doShare(list) {
   const text = formatShareText(list);
 
-  // 优先使用 Web Share API（支持微信等）
-  if (navigator.share) {
-    try {
-      await navigator.share({ title: '待住院患者名单', text: text });
-      return;
-    } catch (e) {
-      if (e.name === 'AbortError') return; // 用户取消
-      // 否则回退到剪贴板
-    }
-  }
-
-  // 回退：复制到剪贴板
+  // 直接复制到剪贴板
   try {
     await navigator.clipboard.writeText(text);
-    showToast('✅ 已复制到剪贴板，去微信粘贴吧');
+    showToast('✅ 已复制，去微信粘贴即可');
   } catch (e) {
-    // 最后的回退方案
+    // 备用方案
     const ta = document.createElement('textarea');
     ta.value = text;
     ta.style.position = 'fixed';
@@ -981,7 +970,7 @@ async function doShare(list) {
     ta.select();
     document.execCommand('copy');
     document.body.removeChild(ta);
-    showToast('✅ 已复制到剪贴板，去微信粘贴吧');
+    showToast('✅ 已复制，去微信粘贴即可');
   }
 }
 
