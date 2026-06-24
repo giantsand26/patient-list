@@ -1251,23 +1251,38 @@ $('#btnParseDo').onclick = function() {
     $('#parseResults').innerHTML = '<p style="text-align:center;color:var(--color-text-tertiary);padding:20px;">未识别到患者信息，请检查内容格式</p>';
     return;
   }
-  let html = '<p style="font-size:13px;color:var(--color-text-secondary);margin-bottom:8px;">识别到 <b>' + results.length + '</b> 名患者：</p>';
+  let html = '<p style="font-size:13px;color:var(--color-text-secondary);margin-bottom:8px;">识别到 <b>' + results.length + '</b> 名患者，勾选要保存的：</p>';
   results.forEach((p, i) => {
-    html += '<div style="background:var(--color-bg);border-radius:8px;padding:10px;margin-bottom:8px;display:flex;align-items:center;gap:10px;">';
+    html += '<label style="display:flex;align-items:center;gap:10px;background:var(--color-bg);border-radius:8px;padding:10px;margin-bottom:8px;cursor:pointer;">';
+    html += '<input type="checkbox" class="parse-check" data-idx="' + i + '" checked style="width:20px;height:20px;accent-color:var(--color-primary);">';
     html += '<span style="font-weight:600;">' + escHtml(p.name) + '</span>';
     if (p.admissionDate) html += '<span style="font-size:12px;color:var(--color-text-secondary);">📅 ' + p.admissionDate + '</span>';
-    html += '</div>';
+    html += '</label>';
   });
-  html += '<button class="btn btn-primary" id="btnParseSave" style="width:100%;margin-top:8px;">✅ 一键录入 ' + results.length + ' 名患者</button>';
+  html += '<div style="display:flex;gap:8px;margin-top:8px;">';
+  html += '<button class="btn btn-secondary" id="btnParseToggle" style="flex:0.5;">全选/取消</button>';
+  html += '<button class="btn btn-primary" id="btnParseSave">✅ 保存选中</button>';
+  html += '</div>';
   $('#parseResults').innerHTML = html;
+
+  $('#btnParseToggle').onclick = function() {
+    const cbs = document.querySelectorAll('.parse-check');
+    const allChecked = [...cbs].every(c => c.checked);
+    cbs.forEach(c => c.checked = !allChecked);
+  };
+
   $('#btnParseSave').onclick = async function() {
-    results.forEach(r => {
+    const cbs = document.querySelectorAll('.parse-check');
+    const selected = [];
+    cbs.forEach(c => { if (c.checked) selected.push(results[parseInt(c.dataset.idx)]); });
+    if (selected.length === 0) { showToast('请至少勾选一名患者'); return; }
+    selected.forEach(r => {
       patients.unshift({ id: generateId(), name: r.name, gender: '男', admissionDate: r.admissionDate||'', notified: false, createdAt: new Date().toISOString() });
     });
     await saveData();
     $('#parseOverlay').style.display = 'none';
     renderList();
-    showToast('✅ 已录入 ' + results.length + ' 名患者');
+    showToast('✅ 已录入 ' + selected.length + ' 名患者');
   };
 };
 
