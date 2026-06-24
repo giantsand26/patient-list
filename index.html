@@ -667,6 +667,7 @@ html, body {
     <span class="header-title">☁️ 待住院患者名单</span>
     <span class="header-count" id="headerCount">0 人</span>
     <button class="header-btn" id="btnSearch" title="搜索">🔍</button>
+    <button class="header-btn" id="btnParse" title="粘贴解析">📋</button>
   </header>
 
   <!-- 搜索栏 -->
@@ -696,6 +697,24 @@ html, body {
     <span class="selected-count" id="selectedCount">已选 0 人</span>
     <button class="share-selected-btn" id="shareSelectedBtn" disabled>分享已选</button>
     <button class="share-selected-btn" id="shareAllBtn2" style="flex:0.8;">分享全部</button>
+  </div>
+</div>
+
+<!-- 粘贴解析弹窗 -->
+<div class="modal-overlay" id="parseOverlay" style="display:none;">
+  <div class="modal-panel" id="parsePanel">
+    <div class="modal-header">
+      <span class="modal-title">📋 粘贴微信聊天内容</span>
+      <button class="modal-close" id="parseClose">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">把微信聊天中关于住院安排的对话粘贴到下面</label>
+        <textarea class="form-textarea" id="parseInput" placeholder="例如：&#10;王主任，麻烦安排一下张三，男，65岁，心内科，下周三入院&#10;好的，还有李四，女，58岁，呼吸内科，也一起安排" style="min-height:140px;"></textarea>
+      </div>
+      <button class="btn btn-primary" id="btnParseDo" style="width:100%;margin-bottom:16px;">🔍 解析</button>
+      <div id="parseResults"></div>
+    </div>
   </div>
 </div>
 
@@ -1211,6 +1230,117 @@ $('#btnDelete').onclick = function() {
     }
   );
 };
+
+// ==================== 粘贴解析 ====================
+$('#btnParse').onclick = function() {
+  $('#parseInput').value = '';
+  $('#parseResults').innerHTML = '';
+  $('#parseOverlay').style.display = 'flex';
+  $('#parseInput').focus();
+};
+$('#parseClose').onclick = function() {
+  $('#parseOverlay').style.display = 'none';
+};
+$('#parseOverlay').onclick = function(e) {
+  if (e.target === $('#parseOverlay')) $('#parseOverlay').style.display = 'none';
+};
+
+$('#btnParseDo').onclick = function() {
+  const text = $('#parseInput').value.trim();
+  if (!text) { showToast('请先粘贴聊天内容'); return; }
+  const results = parsePatients(text);
+  if (results.length === 0) {
+    $('#parseResults').innerHTML = '<p style="text-align:center;color:var(--color-text-tertiary);padding:20px;">未识别到患者信息，请检查内容格式</p>';
+    return;
+  }
+  let html = '<p style="font-size:13px;color:var(--color-text-secondary);margin-bottom:8px;">识别到 <b>' + results.length + '</b> 名患者：</p>';
+  results.forEach((p, i) => {
+    html += '<div style="background:var(--color-bg);border-radius:8px;padding:10px;margin-bottom:8px;display:flex;align-items:center;gap:10px;">';
+    html += '<span style="font-weight:600;">' + escHtml(p.name) + '</span>';
+    html += '<span style="font-size:12px;color:var(--color-text-secondary);">' + (p.gender||'?') + ' ' + (p.age||'') + ' ' + (p.department||'') + '</span>';
+    html += '<span style="font-size:12px;color:var(--color-text-secondary);">入院:' + (p.admissionDate||'未识别') + '</span>';
+    html += '</div>';
+  });
+  html += '<button class="btn btn-primary" id="btnParseSave" style="width:100%;margin-top:8px;">✅ 一键录入 ' + results.length + ' 名患者</button>';
+  $('#parseResults').innerHTML = html;
+  $('#btnParseSave').onclick = async function() {
+    results.forEach(r => {
+      patients.unshift({ id: generateId(), name: r.name, gender: r.gender||'男', admissionDate: r.admissionDate||'', notified: false, createdAt: new Date().toISOString() });
+    });
+    await saveData();
+    $('#parseOverlay').style.display = 'none';
+    renderList();
+    showToast('✅ 已录入 ' + results.length + ' 名患者');
+  };
+};
+
+function parsePatients(text) {
+  const results = [];
+  // 按行或按句子分割
+  const sentences = text.split(/[，。！？\n,;；]/);
+
+  // 科室关键词列表
+  const depts = ['心内科','呼吸内科','消化内科','神经内科','肾内科','内分泌科','普外科','骨科','神经外科','妇产科','儿科','肿瘤科','眼科','耳鼻喉科','皮肤科','急诊科','心外科','泌尿外科','肝胆外科','血液科','风湿免疫科','传染科','康复科','中医科','ICU','CCU'];
+
+  for (let s of sentences) {
+    // 找中文姓名（2-3字，前面可能有"安排""联系"等动词）
+    const nameMatch = s.match(/(?:安排|联系|通知|给|帮|让|有|还有|加上|加上一个|再加|以及|和|、)([\\u4e00-\\u9fa5]{2,3})(?:[，。,.;；\s，。]|$|男|女|的|是)/);
+    const nameMatch2 = s.match(/([\\u4e00-\\u9fa5]{2,3})(?:[，。,.;；\s，。]*)(?:男|女)/);
+
+    let name = null;
+    if (nameMatch2) name = nameMatch2[1];
+    else if (nameMatch) name = nameMatch[1];
+    else continue;
+
+    // 性别
+    let gender = null;
+    if (s.includes('男')) gender = '男';
+    else if (s.includes('女')) gender = '女';
+
+    // 年龄
+    let age = null;
+    const ageMatch = s.match(/(\d{1,3})\s*岁/);
+    if (ageMatch) age = ageMatch[1];
+
+    // 科室
+    let department = null;
+    for (let d of depts) {
+      if (s.includes(d)) { department = d; break; }
+    }
+
+    // 入院日期
+    let admissionDate = null;
+    const dateMatch = s.match(/(\d{4}[-/年]\d{1,2}[-/月]\d{1,2})/);
+    if (dateMatch) {
+      admissionDate = dateMatch[1].replace(/[年月]/g, '-').replace(/[日\/]/g, '');
+    }
+    // 相对日期
+    if (!admissionDate) {
+      if (s.includes('下周一')) admissionDate = getNextWeekday(1);
+      else if (s.includes('下周二')) admissionDate = getNextWeekday(2);
+      else if (s.includes('下周三')) admissionDate = getNextWeekday(3);
+      else if (s.includes('下周四')) admissionDate = getNextWeekday(4);
+      else if (s.includes('下周五')) admissionDate = getNextWeekday(5);
+      else if (s.includes('明天')) admissionDate = getRelativeDate(1);
+      else if (s.includes('后天')) admissionDate = getRelativeDate(2);
+    }
+
+    results.push({ name, gender, age, department, admissionDate });
+  }
+  return results;
+}
+
+function getRelativeDate(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function getNextWeekday(dayOfWeek) {
+  const d = new Date();
+  const diff = (dayOfWeek + 7 - d.getDay()) % 7 || 7;
+  d.setDate(d.getDate() + diff);
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
 
 // ==================== 搜索 ====================
 $('#btnSearch').onclick = function() {
