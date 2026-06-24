@@ -1137,10 +1137,7 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
-// ==================== PWA 注册 ====================
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
-}
+// PWA 服务已禁用（iOS 独立存储隔离问题）
 
 // ==================== 初始化 ====================
 function init() {

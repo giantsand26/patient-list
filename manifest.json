@@ -4,7 +4,7 @@
   "description": "随时记录和管理待住院患者名单，支持分享到微信",
   "start_url": "/patient-list/",
   "scope": "/patient-list/",
-  "display": "standalone",
+  "display": "browser",
   "orientation": "portrait",
   "background_color": "#f1f5f9",
   "theme_color": "#2563eb",
