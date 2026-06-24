@@ -1,0 +1,1154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="待住院名单">
+<meta name="theme-color" content="#2563eb">
+<title>待住院患者名单</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+
+<style>
+/* ========== CSS 变量 & 基础重置 ========== */
+:root {
+  --color-primary: #2563eb;
+  --color-primary-dark: #1d4ed8;
+  --color-primary-light: #dbeafe;
+  --color-danger: #dc2626;
+  --color-danger-light: #fef2f2;
+  --color-success: #16a34a;
+  --color-success-light: #f0fdf4;
+  --color-bg: #f1f5f9;
+  --color-surface: #ffffff;
+  --color-text: #1e293b;
+  --color-text-secondary: #64748b;
+  --color-text-tertiary: #94a3b8;
+  --color-border: #e2e8f0;
+  --color-border-focus: #2563eb;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.08), 0 4px 6px -4px rgba(0,0,0,0.05);
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --safe-bottom: env(safe-area-inset-bottom, 16px);
+  --header-height: 56px;
+  --bottom-bar-height: 64px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ========== 应用容器 ========== */
+.app {
+  max-width: 480px;
+  height: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+  position: relative;
+  overflow: hidden;
+}
+
+/* ========== 顶部导航栏 ========== */
+.header {
+  flex-shrink: 0;
+  height: var(--header-height);
+  background: var(--color-primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 12px;
+  box-shadow: var(--shadow-md);
+  position: relative;
+  z-index: 10;
+}
+.header-title {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.header-count {
+  font-size: 13px;
+  background: rgba(255,255,255,0.2);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.header-btn {
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: rgba(255,255,255,0.15);
+  color: white;
+  border-radius: 50%;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.header-btn:active { background: rgba(255,255,255,0.3); }
+
+/* ========== 搜索栏 ========== */
+.search-bar {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  display: none;
+  animation: slideDown 0.2s ease;
+}
+.search-bar.active { display: block; }
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.search-input-wrap {
+  display: flex;
+  align-items: center;
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+  padding: 0 12px;
+  gap: 8px;
+  border: 2px solid transparent;
+  transition: border-color 0.2s;
+}
+.search-input-wrap:focus-within { border-color: var(--color-primary); }
+.search-input-wrap .icon { font-size: 16px; flex-shrink: 0; }
+.search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 10px 0;
+  font-size: 15px;
+  outline: none;
+  color: var(--color-text);
+  font-family: var(--font-sans);
+}
+.search-input::placeholder { color: var(--color-text-tertiary); }
+.search-clear {
+  width: 24px; height: 24px;
+  border: none;
+  background: var(--color-text-tertiary);
+  color: white;
+  border-radius: 50%;
+  font-size: 12px;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.search-clear.visible { display: flex; }
+
+/* ========== 主内容区 ========== */
+.main-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 12px 20px;
+  -webkit-overflow-scrolling: touch;
+}
+.main-content.has-selection { padding-bottom: calc(var(--bottom-bar-height) + 20px); }
+
+/* ========== 空状态 ========== */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 32px;
+  text-align: center;
+}
+.empty-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  opacity: 0.6;
+}
+.empty-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-bottom: 8px;
+}
+.empty-desc {
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+}
+
+/* ========== 患者卡片 ========== */
+.patient-list { display: flex; flex-direction: column; gap: 10px; }
+
+.patient-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  transition: transform 0.15s, box-shadow 0.15s;
+  cursor: pointer;
+  border: 2px solid transparent;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.patient-card:active { transform: scale(0.985); }
+.patient-card.selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+.patient-card .select-check {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border);
+  flex-shrink: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: white;
+  transition: all 0.15s;
+  margin-top: 2px;
+}
+.select-mode .patient-card .select-check { display: flex; }
+.patient-card.selected .select-check {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+.patient-card .card-body { flex: 1; min-width: 0; }
+.patient-card .card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.patient-card .card-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.patient-card .card-gender {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.patient-card .card-gender.male { background: #dbeafe; color: #1d4ed8; }
+.patient-card .card-gender.female { background: #fce7f3; color: #be185d; }
+.patient-card .card-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+.patient-card .card-detail span { white-space: nowrap; }
+.patient-card .card-department {
+  display: inline-block;
+  background: var(--color-bg);
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-top: 6px;
+}
+.patient-card .card-arrow {
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+  font-size: 14px;
+  margin-top: 2px;
+}
+.patient-card .card-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+.patient-card .card-action-btn {
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 14px;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.15s;
+  font-family: var(--font-sans);
+}
+.card-action-btn.share-btn {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+.card-action-btn.share-btn:active { background: #bfdbfe; }
+.card-action-btn.edit-btn {
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+}
+.card-action-btn.edit-btn:active { background: #dde4ee; }
+
+/* ========== 添加按钮 (FAB) ========== */
+.fab {
+  position: absolute;
+  bottom: 28px;
+  right: 20px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  font-size: 28px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(37,99,235,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s, box-shadow 0.2s;
+  z-index: 20;
+  padding-bottom: 2px;
+}
+.fab:active { transform: scale(0.92); box-shadow: 0 2px 8px rgba(37,99,235,0.3); }
+.fab.shifted { bottom: calc(var(--bottom-bar-height) + 16px); }
+
+/* ========== 底部选择操作栏 ========== */
+.bottom-bar {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: var(--bottom-bar-height);
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  padding-bottom: var(--safe-bottom);
+  gap: 12px;
+  z-index: 30;
+  transform: translateY(100%);
+  transition: transform 0.25s cubic-bezier(0.4,0,0.2,1);
+  box-shadow: 0 -2px 10px rgba(0,0,0,0.06);
+}
+.bottom-bar.active { transform: translateY(0); }
+.bottom-bar .select-all-btn {
+  font-size: 14px;
+  color: var(--color-primary);
+  background: none;
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 8px;
+  font-family: var(--font-sans);
+}
+.bottom-bar .selected-count {
+  flex: 1;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+.bottom-bar .share-selected-btn {
+  font-size: 14px;
+  font-weight: 600;
+  color: white;
+  background: var(--color-primary);
+  border: none;
+  padding: 10px 24px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: background 0.15s;
+}
+.bottom-bar .share-selected-btn:active { background: var(--color-primary-dark); }
+.bottom-bar .share-selected-btn:disabled {
+  background: var(--color-border);
+  color: var(--color-text-tertiary);
+  cursor: not-allowed;
+}
+
+/* ========== 弹窗遮罩 ========== */
+.modal-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  animation: fadeIn 0.2s ease;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* ========== 弹窗面板 ========== */
+.modal-panel {
+  width: 100%;
+  max-width: 480px;
+  max-height: 85vh;
+  background: var(--color-surface);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.3s cubic-bezier(0.4,0,0.2,1);
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
+  gap: 12px;
+}
+.modal-title { font-size: 17px; font-weight: 600; flex: 1; }
+.modal-close {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-bg);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+}
+.modal-close:active { background: #dde4ee; }
+
+/* ========== 表单 ========== */
+.modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  -webkit-overflow-scrolling: touch;
+}
+.form-group {
+  margin-bottom: 16px;
+}
+.form-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-bottom: 6px;
+  letter-spacing: 0.3px;
+}
+.form-input, .form-select, .form-textarea {
+  width: 100%;
+  padding: 10px 14px;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  font-family: var(--font-sans);
+  color: var(--color-text);
+  background: var(--color-bg);
+  transition: border-color 0.2s;
+  outline: none;
+  -webkit-appearance: none;
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+  border-color: var(--color-primary);
+  background: var(--color-surface);
+}
+.form-textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+.form-row {
+  display: flex;
+  gap: 12px;
+}
+.form-row > * { flex: 1; }
+.form-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+}
+.form-date {
+  -webkit-appearance: none;
+  color-scheme: light;
+}
+.form-error {
+  font-size: 12px;
+  color: var(--color-danger);
+  margin-top: 4px;
+  display: none;
+}
+.form-error.visible { display: block; }
+
+.modal-footer {
+  padding: 12px 20px;
+  padding-bottom: calc(12px + var(--safe-bottom));
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  gap: 12px;
+}
+.btn {
+  flex: 1;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  font-family: var(--font-sans);
+  transition: all 0.15s;
+  letter-spacing: 0.3px;
+}
+.btn-primary {
+  background: var(--color-primary);
+  color: white;
+}
+.btn-primary:active { background: var(--color-primary-dark); }
+.btn-danger {
+  background: var(--color-danger-light);
+  color: var(--color-danger);
+}
+.btn-danger:active { background: #fecaca; }
+.btn-secondary {
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+}
+.btn-secondary:active { background: #dde4ee; }
+
+/* ========== 确认对话框 ========== */
+.confirm-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.15s ease;
+}
+.confirm-dialog {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: 24px 20px 16px;
+  width: 100%;
+  max-width: 320px;
+  text-align: center;
+  box-shadow: var(--shadow-lg);
+}
+.confirm-icon {
+  font-size: 40px;
+  margin-bottom: 12px;
+}
+.confirm-title {
+  font-size: 17px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.confirm-desc {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+}
+
+/* ========== Toast 提示 ========== */
+.toast {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-120px);
+  background: #1e293b;
+  color: white;
+  padding: 10px 20px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 70;
+  pointer-events: none;
+  transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+  white-space: nowrap;
+  box-shadow: var(--shadow-lg);
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+
+/* ========== 响应式微调 ========== */
+@media (min-width: 481px) {
+  .app { border-left: 1px solid var(--color-border); border-right: 1px solid var(--color-border); }
+  .modal-panel { border-radius: var(--radius-xl); margin: auto auto 0; max-height: 80vh; }
+}
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+  <!-- 顶部导航 -->
+  <header class="header">
+    <span class="header-title">📋 待住院患者名单</span>
+    <span class="header-count" id="headerCount">0 人</span>
+    <button class="header-btn" id="btnSearch" title="搜索">🔍</button>
+    <button class="header-btn" id="btnShareAll" title="分享全部">📤</button>
+  </header>
+
+  <!-- 搜索栏 -->
+  <div class="search-bar" id="searchBar">
+    <div class="search-input-wrap">
+      <span class="icon">🔍</span>
+      <input type="text" class="search-input" id="searchInput" placeholder="按姓名搜索...">
+      <button class="search-clear" id="searchClear">✕</button>
+    </div>
+  </div>
+
+  <!-- 主内容区 -->
+  <main class="main-content" id="mainContent"></main>
+
+  <!-- 添加按钮 -->
+  <button class="fab" id="fab" title="添加患者">+</button>
+
+  <!-- 底部选择操作栏 -->
+  <div class="bottom-bar" id="bottomBar">
+    <button class="select-all-btn" id="selectAllBtn">全选</button>
+    <span class="selected-count" id="selectedCount">已选 0 人</span>
+    <button class="share-selected-btn" id="shareSelectedBtn" disabled>分享选中</button>
+  </div>
+</div>
+
+<!-- 添加/编辑弹窗 -->
+<div class="modal-overlay" id="modalOverlay" style="display:none;">
+  <div class="modal-panel" id="modalPanel">
+    <div class="modal-header">
+      <span class="modal-title" id="modalTitle">添加患者</span>
+      <button class="modal-close" id="modalClose">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">姓名 *</label>
+        <input type="text" class="form-input" id="fName" placeholder="患者姓名" maxlength="30">
+        <span class="form-error" id="errName">请输入姓名</span>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">性别</label>
+          <select class="form-select" id="fGender">
+            <option value="男">男</option>
+            <option value="女">女</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">入院时间</label>
+          <input type="date" class="form-input form-date" id="fAdmissionDate">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" id="btnDelete" style="display:none;">删除</button>
+      <button class="btn btn-secondary" id="btnCancel">取消</button>
+      <button class="btn btn-primary" id="btnSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- 确认对话框容器 -->
+<div id="confirmContainer"></div>
+
+<script>
+// ==================== 数据管理 ====================
+const STORAGE_KEY = 'patient_list_data';
+let patients = [];
+let editingId = null;
+let selectMode = false;
+let selectedIds = new Set();
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    patients = raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    patients = [];
+  }
+}
+
+function saveData() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(patients));
+}
+
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+// ==================== DOM 引用 ====================
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
+
+const app = $('#app');
+const mainContent = $('#mainContent');
+const headerCount = $('#headerCount');
+const searchBar = $('#searchBar');
+const searchInput = $('#searchInput');
+const searchClear = $('#searchClear');
+const bottomBar = $('#bottomBar');
+const selectedCount = $('#selectedCount');
+const shareSelectedBtn = $('#shareSelectedBtn');
+const fab = $('#fab');
+const modalOverlay = $('#modalOverlay');
+const modalTitle = $('#modalTitle');
+const btnDelete = $('#btnDelete');
+const toast = $('#toast');
+
+// 表单字段
+const fName = $('#fName');
+const fGender = $('#fGender');
+const fAdmissionDate = $('#fAdmissionDate');
+const errName = $('#errName');
+
+// ==================== Toast ====================
+let toastTimer;
+function showToast(msg) {
+  clearTimeout(toastTimer);
+  toast.textContent = msg;
+  toast.classList.add('show');
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 2000);
+}
+
+// ==================== 确认对话框 ====================
+function showConfirm(title, desc, onConfirm) {
+  const container = $('#confirmContainer');
+  container.innerHTML = `
+    <div class="confirm-overlay" id="confirmOverlay">
+      <div class="confirm-dialog">
+        <div class="confirm-icon">⚠️</div>
+        <div class="confirm-title">${title}</div>
+        <div class="confirm-desc">${desc}</div>
+        <div class="confirm-actions">
+          <button class="btn btn-secondary" id="confirmCancel">取消</button>
+          <button class="btn btn-danger" id="confirmOk">确认删除</button>
+        </div>
+      </div>
+    </div>`;
+  $('#confirmCancel').onclick = () => container.innerHTML = '';
+  $('#confirmOk').onclick = () => { container.innerHTML = ''; onConfirm(); };
+  $('#confirmOverlay').onclick = function(e) {
+    if (e.target === this) container.innerHTML = '';
+  };
+}
+
+// ==================== 渲染列表 ====================
+function getFilteredPatients() {
+  const query = searchInput.value.trim().toLowerCase();
+  if (!query) return patients;
+  return patients.filter(p => p.name.toLowerCase().includes(query));
+}
+
+function renderList() {
+  const filtered = getFilteredPatients();
+  headerCount.textContent = patients.length + ' 人';
+
+  if (patients.length === 0) {
+    mainContent.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">📋</div>
+        <div class="empty-title">还没有记录</div>
+        <div class="empty-desc">点击右下角的 <strong>+</strong> 按钮<br>添加第一位待住院患者</div>
+      </div>`;
+  } else if (filtered.length === 0) {
+    mainContent.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">🔍</div>
+        <div class="empty-title">没有找到匹配的患者</div>
+        <div class="empty-desc">尝试换个关键词搜索</div>
+      </div>`;
+  } else {
+    mainContent.innerHTML = `<div class="patient-list">${filtered.map(p => renderCard(p)).join('')}</div>`;
+  }
+
+  mainContent.classList.toggle('has-selection', selectMode);
+  mainContent.classList.toggle('select-mode', selectMode);
+  updateSelectionUI();
+
+  // 绑定卡片事件
+  $$('.patient-card').forEach(card => {
+    const id = card.dataset.id;
+    card.onclick = function(e) {
+      // 如果点击的是操作按钮，不处理
+      if (e.target.closest('.card-action-btn')) return;
+      if (selectMode) {
+        toggleSelect(id);
+      } else {
+        openEditModal(id);
+      }
+    };
+    // 长按进入选择模式
+    let longPressTimer;
+    card.addEventListener('pointerdown', function(e) {
+      if (selectMode || e.target.closest('.card-action-btn')) return;
+      longPressTimer = setTimeout(() => {
+        enterSelectMode();
+        toggleSelect(id);
+      }, 500);
+    });
+    card.addEventListener('pointerup', () => clearTimeout(longPressTimer));
+    card.addEventListener('pointerleave', () => clearTimeout(longPressTimer));
+    card.addEventListener('pointercancel', () => clearTimeout(longPressTimer));
+  });
+
+  // 绑定卡片内分享按钮
+  $$('.card-action-btn.share-btn').forEach(btn => {
+    btn.onclick = function(e) {
+      e.stopPropagation();
+      sharePatient(btn.dataset.id);
+    };
+  });
+  $$('.card-action-btn.edit-btn').forEach(btn => {
+    btn.onclick = function(e) {
+      e.stopPropagation();
+      openEditModal(btn.dataset.id);
+    };
+  });
+}
+
+function renderCard(p) {
+  const selectedClass = selectedIds.has(p.id) ? ' selected' : '';
+  const genderClass = p.gender === '女' ? 'female' : 'male';
+  const dateDisplay = p.admissionDate ? formatDate(p.admissionDate) : '未设定';
+  return `
+    <div class="patient-card${selectedClass}" data-id="${p.id}">
+      <div class="select-check">✓</div>
+      <div class="card-body">
+        <div class="card-header">
+          <span class="card-name">${escHtml(p.name)}</span>
+          <span class="card-gender ${genderClass}">${p.gender || '男'}</span>
+        </div>
+        <div class="card-detail">
+          <span>📅 入院：${dateDisplay}</span>
+        </div>
+        <div class="card-actions">
+          <button class="card-action-btn share-btn" data-id="${p.id}">📤 分享</button>
+          <button class="card-action-btn edit-btn" data-id="${p.id}">✏️ 编辑</button>
+        </div>
+      </div>
+      <span class="card-arrow">›</span>
+    </div>`;
+}
+
+function escHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  return parts[1] + '月' + parts[2] + '日';
+}
+
+// ==================== 选择模式 ====================
+function enterSelectMode() {
+  selectMode = true;
+  selectedIds.clear();
+  document.body.classList.add('select-mode');
+  renderList();
+  bottomBar.classList.add('active');
+  fab.classList.add('shifted');
+}
+
+function exitSelectMode() {
+  selectMode = false;
+  selectedIds.clear();
+  document.body.classList.remove('select-mode');
+  renderList();
+  bottomBar.classList.remove('active');
+  fab.classList.remove('shifted');
+}
+
+function toggleSelect(id) {
+  if (selectedIds.has(id)) {
+    selectedIds.delete(id);
+    if (selectedIds.size === 0) exitSelectMode();
+  } else {
+    selectedIds.add(id);
+  }
+  renderList();
+}
+
+function updateSelectionUI() {
+  if (!selectMode) return;
+  const count = selectedIds.size;
+  selectedCount.textContent = '已选 ' + count + ' 人';
+  shareSelectedBtn.disabled = count === 0;
+}
+
+// 全选/取消全选
+$('#selectAllBtn').onclick = function() {
+  const filtered = getFilteredPatients();
+  if (selectedIds.size === filtered.length) {
+    selectedIds.clear();
+    exitSelectMode();
+  } else {
+    filtered.forEach(p => selectedIds.add(p.id));
+    renderList();
+  }
+};
+
+// 分享选中
+shareSelectedBtn.onclick = function() {
+  if (selectedIds.size === 0) return;
+  const selected = patients.filter(p => selectedIds.has(p.id));
+  doShare(selected);
+  exitSelectMode();
+};
+
+$('#btnShareAll').onclick = function() {
+  if (patients.length === 0) { showToast('没有可分享的患者'); return; }
+  doShare(patients);
+};
+
+// ==================== 分享逻辑 ====================
+function sharePatient(id) {
+  const p = patients.find(p => p.id === id);
+  if (!p) return;
+  doShare([p]);
+}
+
+function formatShareText(list) {
+  const now = new Date();
+  const dateStr = now.getFullYear() + '年' + (now.getMonth()+1) + '月' + now.getDate() + '日';
+  let text = '【待住院患者名单】\n';
+  text += '━━━━━━━━━━━━━━━━\n';
+  list.forEach((p, i) => {
+    text += '姓名：' + p.name;
+    if (p.gender) text += '  性别：' + p.gender;
+    text += '\n';
+    if (p.admissionDate) text += '入院时间：' + p.admissionDate + '\n';
+    if (i < list.length - 1) text += '━━━━━━━━━━━━━━━━\n';
+  });
+  text += '━━━━━━━━━━━━━━━━\n';
+  text += '共 ' + list.length + ' 名患者 ｜ 更新于 ' + dateStr;
+  return text;
+}
+
+async function doShare(list) {
+  const text = formatShareText(list);
+
+  // 优先使用 Web Share API（支持微信等）
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: '待住院患者名单', text: text });
+      return;
+    } catch (e) {
+      if (e.name === 'AbortError') return; // 用户取消
+      // 否则回退到剪贴板
+    }
+  }
+
+  // 回退：复制到剪贴板
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('✅ 已复制到剪贴板，去微信粘贴吧');
+  } catch (e) {
+    // 最后的回退方案
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('✅ 已复制到剪贴板，去微信粘贴吧');
+  }
+}
+
+// ==================== 弹窗 - 添加/编辑 ====================
+function resetForm() {
+  fName.value = '';
+  fGender.value = '男';
+  fAdmissionDate.value = '';
+  errName.classList.remove('visible');
+}
+
+function openAddModal() {
+  editingId = null;
+  modalTitle.textContent = '添加患者';
+  btnDelete.style.display = 'none';
+  resetForm();
+  modalOverlay.style.display = 'flex';
+  fName.focus();
+}
+
+function openEditModal(id) {
+  const p = patients.find(p => p.id === id);
+  if (!p) return;
+  editingId = id;
+  modalTitle.textContent = '编辑患者信息';
+  btnDelete.style.display = 'block';
+  fName.value = p.name || '';
+  fGender.value = p.gender || '男';
+  fAdmissionDate.value = p.admissionDate || '';
+  errName.classList.remove('visible');
+  modalOverlay.style.display = 'flex';
+  fName.focus();
+}
+
+function closeModal() {
+  modalOverlay.style.display = 'none';
+  editingId = null;
+}
+
+function getFormData() {
+  return {
+    name: fName.value.trim(),
+    gender: fGender.value,
+    admissionDate: fAdmissionDate.value,
+  };
+}
+
+function validateForm(data) {
+  let valid = true;
+  if (!data.name) { errName.classList.add('visible'); valid = false; }
+  else { errName.classList.remove('visible'); }
+  return valid;
+}
+
+// ==================== 保存 / 删除 ====================
+$('#btnSave').onclick = function() {
+  const data = getFormData();
+  if (!validateForm(data)) return;
+
+  if (editingId) {
+    const idx = patients.findIndex(p => p.id === editingId);
+    if (idx !== -1) {
+      patients[idx] = { ...patients[idx], ...data };
+      showToast('✅ 已更新');
+    }
+  } else {
+    patients.unshift({
+      id: generateId(),
+      ...data,
+      createdAt: new Date().toISOString(),
+    });
+    showToast('✅ 已添加');
+  }
+
+  saveData();
+  closeModal();
+  renderList();
+};
+
+$('#btnCancel').onclick = closeModal;
+$('#modalClose').onclick = closeModal;
+
+modalOverlay.onclick = function(e) {
+  if (e.target === modalOverlay) closeModal();
+};
+
+$('#btnDelete').onclick = function() {
+  if (!editingId) return;
+  const p = patients.find(p => p.id === editingId);
+  if (!p) return;
+  showConfirm(
+    '确认删除',
+    '确定要删除患者 <strong>' + escHtml(p.name) + '</strong> 的记录吗？此操作不可撤销。',
+    function() {
+      patients = patients.filter(p => p.id !== editingId);
+      saveData();
+      closeModal();
+      renderList();
+      showToast('已删除');
+    }
+  );
+};
+
+// ==================== 搜索 ====================
+$('#btnSearch').onclick = function() {
+  searchBar.classList.toggle('active');
+  if (searchBar.classList.contains('active')) {
+    searchInput.focus();
+  } else {
+    searchInput.value = '';
+    renderList();
+  }
+};
+
+searchInput.oninput = function() {
+  searchClear.classList.toggle('visible', searchInput.value.length > 0);
+  renderList();
+};
+
+searchClear.onclick = function() {
+  searchInput.value = '';
+  searchClear.classList.remove('visible');
+  renderList();
+  searchInput.focus();
+};
+
+// ==================== FAB ====================
+fab.onclick = function() {
+  if (selectMode) {
+    exitSelectMode();
+    return;
+  }
+  openAddModal();
+};
+
+// ==================== 键盘快捷键 ====================
+document.addEventListener('keydown', function(e) {
+  // Esc 关闭弹窗/搜索
+  if (e.key === 'Escape') {
+    if (modalOverlay.style.display === 'flex') { closeModal(); return; }
+    if (selectMode) { exitSelectMode(); return; }
+    if (searchBar.classList.contains('active')) {
+      searchBar.classList.remove('active');
+      searchInput.value = '';
+      renderList();
+    }
+  }
+  // Ctrl/Cmd + F 打开搜索
+  if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+    e.preventDefault();
+    searchBar.classList.add('active');
+    searchInput.focus();
+  }
+});
+
+// ==================== PWA 注册 ====================
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
+// ==================== 初始化 ====================
+function init() {
+  loadData();
+  renderList();
+}
+
+init();
+</script>
+</body>
+</html>
