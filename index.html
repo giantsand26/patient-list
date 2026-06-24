@@ -164,6 +164,51 @@ html, body {
 }
 .search-clear.visible { display: flex; }
 
+/* ========== 标签栏（待通知 / 已通知） ========== */
+.tab-bar {
+  flex-shrink: 0;
+  display: flex;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+.tab-btn {
+  flex: 1;
+  padding: 12px;
+  border: none;
+  background: none;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  position: relative;
+  transition: color 0.15s;
+}
+.tab-btn.active { color: var(--color-primary); }
+.tab-btn.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 20%;
+  right: 20%;
+  height: 3px;
+  background: var(--color-primary);
+  border-radius: 2px;
+}
+.tab-count {
+  font-size: 12px;
+  font-weight: 500;
+  margin-left: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+}
+.tab-btn.active .tab-count {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
 /* ========== 主内容区 ========== */
 .main-content {
   flex: 1;
@@ -307,6 +352,27 @@ html, body {
   color: var(--color-text-secondary);
 }
 .card-action-btn.edit-btn:active { background: #dde4ee; }
+
+/* 已通知卡片：灰色 */
+.patient-card.notified {
+  opacity: 0.55;
+  background: #f8fafc;
+}
+.patient-card.notified .card-name { color: var(--color-text-tertiary); }
+.patient-card.notified .card-gender { opacity: 0.5; }
+
+/* 已通知操作按钮 */
+.card-action-btn.notify-btn {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+.card-action-btn.notify-btn:active { background: #dcfce7; }
+.card-action-btn.undo-btn {
+  background: #fef2f2;
+  color: #dc2626;
+  font-size: 11px;
+}
+.card-action-btn.undo-btn:active { background: #fecaca; }
 
 /* ========== 添加按钮 (FAB) ========== */
 .fab {
@@ -612,6 +678,12 @@ html, body {
     </div>
   </div>
 
+  <!-- 标签栏 -->
+  <div class="tab-bar" id="tabBar">
+    <button class="tab-btn active" id="tabPending">待通知<span class="tab-count" id="pendingCount">0</span></button>
+    <button class="tab-btn" id="tabNotified">已通知<span class="tab-count" id="notifiedCount">0</span></button>
+  </div>
+
   <!-- 主内容区 -->
   <main class="main-content" id="mainContent"></main>
 
@@ -674,6 +746,7 @@ const BIN_ID = '6a3b3413f5f4af5e29266b79';
 const API_KEY = '$2a$10$bMi87ezGklMeA52PVzykbua9GpehcfRfW4QHVxB8fbPR6c4cfHxZO';
 const API_URL = 'https://api.jsonbin.io/v3/b/' + BIN_ID;
 let patients = [];
+let currentTab = 'pending'; // 'pending' | 'notified'
 let editingId = null;
 let selectedIds = new Set();
 
@@ -776,13 +849,28 @@ function showConfirm(title, desc, onConfirm) {
 // ==================== 渲染列表 ====================
 function getFilteredPatients() {
   const query = searchInput.value.trim().toLowerCase();
-  if (!query) return patients;
-  return patients.filter(p => p.name.toLowerCase().includes(query));
+  let list = patients;
+  // 按标签筛选
+  if (currentTab === 'pending') {
+    list = patients.filter(p => !p.notified);
+  } else {
+    list = patients.filter(p => p.notified);
+  }
+  // 搜索
+  if (query) {
+    list = list.filter(p => p.name.toLowerCase().includes(query));
+  }
+  return list;
 }
 
 function renderList() {
   const filtered = getFilteredPatients();
+  // 更新计数
+  const pendingNum = patients.filter(p => !p.notified).length;
+  const notifiedNum = patients.filter(p => p.notified).length;
   headerCount.textContent = patients.length + ' 人';
+  document.getElementById('pendingCount').textContent = pendingNum;
+  document.getElementById('notifiedCount').textContent = notifiedNum;
 
   if (patients.length === 0) {
     mainContent.innerHTML = `
@@ -804,15 +892,22 @@ function renderList() {
 
   updateSelectionUI();
 
-  // 绑定卡片事件：点圆圈=选择，点卡片=编辑
+  // 绑定卡片事件
   $$('.patient-card').forEach(card => {
     const id = card.dataset.id;
     card.onclick = function(e) {
       if (e.target.closest('.select-check')) {
-        // 点了勾选圆圈
         toggleSelect(id);
+      } else if (e.target.closest('.notify-btn')) {
+        e.stopPropagation();
+        markNotified(id);
+      } else if (e.target.closest('.undo-btn')) {
+        e.stopPropagation();
+        undoNotified(id);
+      } else if (e.target.closest('.edit-btn')) {
+        e.stopPropagation();
+        openEditModal(id);
       } else {
-        // 点了卡片其他区域
         openEditModal(id);
       }
     };
@@ -821,10 +916,19 @@ function renderList() {
 
 function renderCard(p) {
   const selectedClass = selectedIds.has(p.id) ? ' selected' : '';
+  const notifiedClass = p.notified ? ' notified' : '';
   const genderClass = p.gender === '女' ? 'female' : 'male';
   const dateDisplay = p.admissionDate ? formatDate(p.admissionDate) : '未设定';
+  const cardActions = p.notified
+    ? `<div class="card-actions">
+        <button class="card-action-btn undo-btn" data-id="${p.id}">↩ 撤销</button>
+      </div>`
+    : `<div class="card-actions">
+        <button class="card-action-btn notify-btn" data-id="${p.id}">✅ 已通知</button>
+        <button class="card-action-btn edit-btn" data-id="${p.id}">✏️</button>
+      </div>`;
   return `
-    <div class="patient-card${selectedClass}" data-id="${p.id}">
+    <div class="patient-card${selectedClass}${notifiedClass}" data-id="${p.id}">
       <div class="select-check">✓</div>
       <div class="card-body">
         <div class="card-header">
@@ -834,6 +938,7 @@ function renderCard(p) {
         <div class="card-detail">
           <span>📅 入院：${dateDisplay}</span>
         </div>
+        ${cardActions}
       </div>
     </div>`;
 }
@@ -849,6 +954,42 @@ function formatDate(dateStr) {
   const parts = dateStr.split('-');
   return parts[1] + '月' + parts[2] + '日';
 }
+
+// ==================== 已通知标记 ====================
+async function markNotified(id) {
+  const p = patients.find(p => p.id === id);
+  if (!p) return;
+  p.notified = true;
+  await saveData();
+  renderList();
+  showToast('✅ 已标记为已通知');
+}
+
+async function undoNotified(id) {
+  const p = patients.find(p => p.id === id);
+  if (!p) return;
+  p.notified = false;
+  await saveData();
+  renderList();
+  showToast('↩ 已撤销，回到待通知');
+}
+
+// ==================== 标签切换 ====================
+$('#tabPending').onclick = function() {
+  currentTab = 'pending';
+  document.getElementById('tabPending').classList.add('active');
+  document.getElementById('tabNotified').classList.remove('active');
+  clearSelection();
+  renderList();
+};
+
+$('#tabNotified').onclick = function() {
+  currentTab = 'notified';
+  document.getElementById('tabNotified').classList.add('active');
+  document.getElementById('tabPending').classList.remove('active');
+  clearSelection();
+  renderList();
+};
 
 // ==================== 选择逻辑 ====================
 function toggleSelect(id) {
@@ -985,6 +1126,7 @@ function getFormData() {
     name: fName.value.trim(),
     gender: fGender.value,
     admissionDate: fAdmissionDate.value,
+    notified: false,
   };
 }
 
