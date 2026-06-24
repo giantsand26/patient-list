@@ -761,7 +761,7 @@ async function loadData() {
     if (resp.ok) {
       const info = await resp.json();
       dataSha = info.sha;
-      const decoded = JSON.parse(atob(info.content));
+      const decoded = JSON.parse(decodeBase64(info.content));
       patients = decoded.patients || [];
       localStorage.setItem('patient_list_data', JSON.stringify(patients));
       return;
@@ -785,7 +785,7 @@ async function saveData() {
         dataSha = (await getResp.json()).sha;
       }
     }
-    const content = btoa(unescape(encodeURIComponent(JSON.stringify({ patients: patients }))));
+    const content = encodeBase64(JSON.stringify({ patients: patients }));
     const putResp = await fetch(DATA_API, {
       method: 'PUT',
       headers: {
@@ -803,6 +803,17 @@ async function saveData() {
 
 function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+// UTF-8 Base64 编解码（处理中文）
+function encodeBase64(str) {
+  const bytes = new TextEncoder().encode(str);
+  return btoa(String.fromCharCode(...bytes));
+}
+function decodeBase64(b64) {
+  const bin = atob(b64);
+  const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
 }
 
 // ==================== DOM 引用 ====================
