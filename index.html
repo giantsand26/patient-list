@@ -669,23 +669,48 @@ html, body {
 <div id="confirmContainer"></div>
 
 <script>
-// ==================== 数据管理 ====================
-const STORAGE_KEY = 'patient_list_data';
+// ==================== 数据管理（云端存储） ====================
+const BIN_ID = '6a3b3413f5f4af5e29266b79';
+const API_KEY = '$2a$10$bMi87ezGklMeA52PVzykbua9GpehcfRfW4QHVxB8fbPR6c4cfHxZO';
+const API_URL = 'https://api.jsonbin.io/v3/b/' + BIN_ID;
 let patients = [];
 let editingId = null;
 let selectedIds = new Set();
 
-function loadData() {
+async function loadData() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const resp = await fetch(API_URL + '/latest', {
+      headers: { 'X-Access-Key': API_KEY }
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      patients = data.record.patients || [];
+      return;
+    }
+  } catch (e) {}
+  // 网络失败时用本地缓存
+  try {
+    const raw = localStorage.getItem('patient_list_data');
     patients = raw ? JSON.parse(raw) : [];
   } catch (e) {
     patients = [];
   }
 }
 
-function saveData() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(patients));
+async function saveData() {
+  // 同时存本地缓存（离线备用）
+  localStorage.setItem('patient_list_data', JSON.stringify(patients));
+  // 存云端
+  try {
+    await fetch(API_URL, {
+      method: 'PUT',
+      headers: {
+        'X-Access-Key': API_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ patients: patients })
+    });
+  } catch (e) {}
 }
 
 function generateId() {
@@ -971,7 +996,7 @@ function validateForm(data) {
 }
 
 // ==================== 保存 / 删除 ====================
-$('#btnSave').onclick = function() {
+$('#btnSave').onclick = async function() {
   const data = getFormData();
   if (!validateForm(data)) return;
 
@@ -990,7 +1015,7 @@ $('#btnSave').onclick = function() {
     showToast('✅ 已添加');
   }
 
-  saveData();
+  await saveData();
   closeModal();
   renderList();
 };
@@ -1009,9 +1034,9 @@ $('#btnDelete').onclick = function() {
   showConfirm(
     '确认删除',
     '确定要删除患者 <strong>' + escHtml(p.name) + '</strong> 的记录吗？此操作不可撤销。',
-    function() {
+    async function() {
       patients = patients.filter(p => p.id !== editingId);
-      saveData();
+      await saveData();
       closeModal();
       renderList();
       showToast('已删除');
@@ -1070,8 +1095,8 @@ document.addEventListener('keydown', function(e) {
 // PWA 服务已禁用（iOS 独立存储隔离问题）
 
 // ==================== 初始化 ====================
-function init() {
-  loadData();
+async function init() {
+  await loadData();
   renderList();
 }
 
