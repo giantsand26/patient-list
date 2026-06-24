@@ -175,7 +175,7 @@ html, body {
   padding: 12px 12px 20px;
   -webkit-overflow-scrolling: touch;
 }
-.main-content.has-selection { padding-bottom: calc(var(--bottom-bar-height) + 20px); }
+.main-content { padding-bottom: calc(var(--bottom-bar-height) + 20px); }
 
 /* ========== 空状态 ========== */
 .empty-state {
@@ -225,19 +225,19 @@ html, body {
   background: var(--color-primary-light);
 }
 .patient-card .select-check {
-  width: 22px; height: 22px;
+  width: 24px; height: 24px;
   border-radius: 50%;
   border: 2px solid var(--color-border);
   flex-shrink: 0;
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: center;
   font-size: 12px;
-  color: white;
+  color: transparent;
   transition: all 0.15s;
   margin-top: 2px;
+  background: var(--color-bg);
 }
-.select-mode .patient-card .select-check { display: flex; }
 .patient-card.selected .select-check {
   background: var(--color-primary);
   border-color: var(--color-primary);
@@ -315,7 +315,7 @@ html, body {
 /* ========== 添加按钮 (FAB) ========== */
 .fab {
   position: absolute;
-  bottom: 28px;
+  bottom: calc(var(--bottom-bar-height) + 16px);
   right: 20px;
   width: 56px;
   height: 56px;
@@ -334,7 +334,6 @@ html, body {
   padding-bottom: 2px;
 }
 .fab:active { transform: scale(0.92); box-shadow: 0 2px 8px rgba(37,99,235,0.3); }
-.fab.shifted { bottom: calc(var(--bottom-bar-height) + 16px); }
 
 /* ========== 底部选择操作栏 ========== */
 .bottom-bar {
@@ -347,13 +346,10 @@ html, body {
   align-items: center;
   padding: 0 16px;
   padding-bottom: var(--safe-bottom);
-  gap: 12px;
+  gap: 8px;
   z-index: 30;
-  transform: translateY(100%);
-  transition: transform 0.25s cubic-bezier(0.4,0,0.2,1);
   box-shadow: 0 -2px 10px rgba(0,0,0,0.06);
 }
-.bottom-bar.active { transform: translateY(0); }
 .bottom-bar .select-all-btn {
   font-size: 14px;
   color: var(--color-primary);
@@ -609,7 +605,6 @@ html, body {
     <span class="header-title">📋 待住院患者名单</span>
     <span class="header-count" id="headerCount">0 人</span>
     <button class="header-btn" id="btnSearch" title="搜索">🔍</button>
-    <button class="header-btn" id="btnShareAll" title="分享全部">📤</button>
   </header>
 
   <!-- 搜索栏 -->
@@ -631,7 +626,8 @@ html, body {
   <div class="bottom-bar" id="bottomBar">
     <button class="select-all-btn" id="selectAllBtn">全选</button>
     <span class="selected-count" id="selectedCount">已选 0 人</span>
-    <button class="share-selected-btn" id="shareSelectedBtn" disabled>分享选中</button>
+    <button class="share-selected-btn" id="shareSelectedBtn" disabled>分享已选</button>
+    <button class="share-selected-btn" id="shareAllBtn2" style="flex:0.8;">分享全部</button>
   </div>
 </div>
 
@@ -681,7 +677,6 @@ html, body {
 const STORAGE_KEY = 'patient_list_data';
 let patients = [];
 let editingId = null;
-let selectMode = false;
 let selectedIds = new Set();
 
 function loadData() {
@@ -786,47 +781,19 @@ function renderList() {
     mainContent.innerHTML = `<div class="patient-list">${filtered.map(p => renderCard(p)).join('')}</div>`;
   }
 
-  mainContent.classList.toggle('has-selection', selectMode);
-  mainContent.classList.toggle('select-mode', selectMode);
   updateSelectionUI();
 
-  // 绑定卡片事件
+  // 绑定卡片事件：点圆圈=选择，点卡片=编辑
   $$('.patient-card').forEach(card => {
     const id = card.dataset.id;
     card.onclick = function(e) {
-      // 如果点击的是操作按钮，不处理
-      if (e.target.closest('.card-action-btn')) return;
-      if (selectMode) {
+      if (e.target.closest('.select-check')) {
+        // 点了勾选圆圈
         toggleSelect(id);
       } else {
+        // 点了卡片其他区域
         openEditModal(id);
       }
-    };
-    // 长按进入选择模式
-    let longPressTimer;
-    card.addEventListener('pointerdown', function(e) {
-      if (selectMode || e.target.closest('.card-action-btn')) return;
-      longPressTimer = setTimeout(() => {
-        enterSelectMode();
-        toggleSelect(id);
-      }, 500);
-    });
-    card.addEventListener('pointerup', () => clearTimeout(longPressTimer));
-    card.addEventListener('pointerleave', () => clearTimeout(longPressTimer));
-    card.addEventListener('pointercancel', () => clearTimeout(longPressTimer));
-  });
-
-  // 绑定卡片内分享按钮
-  $$('.card-action-btn.share-btn').forEach(btn => {
-    btn.onclick = function(e) {
-      e.stopPropagation();
-      sharePatient(btn.dataset.id);
-    };
-  });
-  $$('.card-action-btn.edit-btn').forEach(btn => {
-    btn.onclick = function(e) {
-      e.stopPropagation();
-      openEditModal(btn.dataset.id);
     };
   });
 }
@@ -846,12 +813,7 @@ function renderCard(p) {
         <div class="card-detail">
           <span>📅 入院：${dateDisplay}</span>
         </div>
-        <div class="card-actions">
-          <button class="card-action-btn share-btn" data-id="${p.id}">📤 分享</button>
-          <button class="card-action-btn edit-btn" data-id="${p.id}">✏️ 编辑</button>
-        </div>
       </div>
-      <span class="card-arrow">›</span>
     </div>`;
 }
 
@@ -867,74 +829,61 @@ function formatDate(dateStr) {
   return parts[1] + '月' + parts[2] + '日';
 }
 
-// ==================== 选择模式 ====================
-function enterSelectMode() {
-  selectMode = true;
-  selectedIds.clear();
-  document.body.classList.add('select-mode');
-  renderList();
-  bottomBar.classList.add('active');
-  fab.classList.add('shifted');
-}
-
-function exitSelectMode() {
-  selectMode = false;
-  selectedIds.clear();
-  document.body.classList.remove('select-mode');
-  renderList();
-  bottomBar.classList.remove('active');
-  fab.classList.remove('shifted');
-}
-
+// ==================== 选择逻辑 ====================
 function toggleSelect(id) {
   if (selectedIds.has(id)) {
     selectedIds.delete(id);
-    if (selectedIds.size === 0) exitSelectMode();
   } else {
     selectedIds.add(id);
   }
   renderList();
 }
 
+function clearSelection() {
+  selectedIds.clear();
+  renderList();
+}
+
 function updateSelectionUI() {
-  if (!selectMode) return;
   const count = selectedIds.size;
-  selectedCount.textContent = '已选 ' + count + ' 人';
-  shareSelectedBtn.disabled = count === 0;
+  bottomBar.classList.add('active');
+  fab.classList.add('shifted');
+  if (count > 0) {
+    selectedCount.textContent = '已选 ' + count + ' 人';
+    shareSelectedBtn.disabled = false;
+  } else {
+    selectedCount.textContent = '点圆圈勾选';
+    shareSelectedBtn.disabled = true;
+  }
 }
 
 // 全选/取消全选
 $('#selectAllBtn').onclick = function() {
   const filtered = getFilteredPatients();
   if (selectedIds.size === filtered.length) {
-    selectedIds.clear();
-    exitSelectMode();
+    clearSelection();
   } else {
     filtered.forEach(p => selectedIds.add(p.id));
     renderList();
   }
 };
 
-// 分享选中
+// 分享已选
 shareSelectedBtn.onclick = function() {
   if (selectedIds.size === 0) return;
   const selected = patients.filter(p => selectedIds.has(p.id));
   doShare(selected);
-  exitSelectMode();
+  clearSelection();
 };
 
-$('#btnShareAll').onclick = function() {
+// 分享全部
+$('#shareAllBtn2').onclick = function() {
   if (patients.length === 0) { showToast('没有可分享的患者'); return; }
   doShare(patients);
+  clearSelection();
 };
 
 // ==================== 分享逻辑 ====================
-function sharePatient(id) {
-  const p = patients.find(p => p.id === id);
-  if (!p) return;
-  doShare([p]);
-}
-
 function formatShareText(list) {
   const now = new Date();
   const dateStr = now.getFullYear() + '年' + (now.getMonth()+1) + '月' + now.getDate() + '日';
@@ -1099,10 +1048,6 @@ searchClear.onclick = function() {
 
 // ==================== FAB ====================
 fab.onclick = function() {
-  if (selectMode) {
-    exitSelectMode();
-    return;
-  }
   openAddModal();
 };
 
@@ -1111,7 +1056,7 @@ document.addEventListener('keydown', function(e) {
   // Esc 关闭弹窗/搜索
   if (e.key === 'Escape') {
     if (modalOverlay.style.display === 'flex') { closeModal(); return; }
-    if (selectMode) { exitSelectMode(); return; }
+    if (selectedIds.size > 0) { clearSelection(); return; }
     if (searchBar.classList.contains('active')) {
       searchBar.classList.remove('active');
       searchInput.value = '';
