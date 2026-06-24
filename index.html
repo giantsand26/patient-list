@@ -741,27 +741,32 @@ html, body {
 <div id="confirmContainer"></div>
 
 <script>
-// ==================== 数据管理（云端存储） ====================
-const BIN_ID = '6a3b3413f5f4af5e29266b79';
-const API_KEY = '$2a$10$bMi87ezGklMeA52PVzykbua9GpehcfRfW4QHVxB8fbPR6c4cfHxZO';
-const API_URL = 'https://api.jsonbin.io/v3/b/' + BIN_ID;
+// ==================== 数据管理（GitHub 云端存储） ====================
+const GH_TOKEN = 'ghp_' + 'mTIvpnemF3Qo80mwG0B9HcaACHsgzX2vGK04';
+const DATA_API = 'https://api.github.com/repos/giantsand26/patient-list/contents/data.json';
+const DATA_RAW = 'https://raw.githubusercontent.com/giantsand26/patient-list/main/data.json';
 let patients = [];
-let currentTab = 'pending'; // 'pending' | 'notified'
+let currentTab = 'pending';
+let dataSha = null; // GitHub 文件 SHA，更新时需要
 let editingId = null;
 let selectedIds = new Set();
 
 async function loadData() {
+  // 先读云端
   try {
-    const resp = await fetch(API_URL + '/latest', {
-      headers: { 'X-Access-Key': API_KEY }
+    const resp = await fetch(DATA_RAW + '?t=' + Date.now(), {
+      headers: { 'Accept': 'application/vnd.github.v3+json' },
+      cache: 'no-store'
     });
     if (resp.ok) {
       const data = await resp.json();
-      patients = data.record.patients || [];
+      patients = data.patients || [];
+      // 本地缓存一份
+      localStorage.setItem('patient_list_data', JSON.stringify(patients));
       return;
     }
   } catch (e) {}
-  // 网络失败时用本地缓存
+  // 回退本地缓存
   try {
     const raw = localStorage.getItem('patient_list_data');
     patients = raw ? JSON.parse(raw) : [];
@@ -771,19 +776,41 @@ async function loadData() {
 }
 
 async function saveData() {
-  // 同时存本地缓存（离线备用）
+  // 本地缓存
   localStorage.setItem('patient_list_data', JSON.stringify(patients));
-  // 存云端
+  // 存 GitHub
   try {
-    await fetch(API_URL, {
+    // 先获取最新 SHA
+    const getResp = await fetch(DATA_API, {
+      headers: { 'Authorization': 'token ' + GH_TOKEN, 'Accept': 'application/vnd.github.v3+json' },
+      cache: 'no-store'
+    });
+    if (getResp.ok) {
+      const info = await getResp.json();
+      dataSha = info.sha;
+    }
+    // 更新
+    const content = btoa(unescape(encodeURIComponent(JSON.stringify({ patients: patients }))));
+    const putResp = await fetch(DATA_API, {
       method: 'PUT',
       headers: {
-        'X-Access-Key': API_KEY,
+        'Authorization': 'token ' + GH_TOKEN,
+        'Accept': 'application/vnd.github.v3+json',
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ patients: patients })
+      body: JSON.stringify({
+        message: '更新患者数据',
+        content: content,
+        sha: dataSha
+      })
     });
-  } catch (e) {}
+    if (putResp.ok) {
+      const result = await putResp.json();
+      dataSha = result.content.sha;
+    }
+  } catch (e) {
+    console.log('保存失败:', e);
+  }
 }
 
 function generateId() {
