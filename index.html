@@ -761,17 +761,17 @@ html, body {
 
 <script>
 // ==================== 数据管理（GitHub 云端存储） ====================
-const GH_TOKEN = 'ghp_' + 'gBjaGOefPZqDmxB3TLINn1ht6eYYza3sOd5o';
+const GH_TOKEN = 'ghp_' + 'Bc9Qn5kKW0b11lUomW6hwMwtJQsbzY4EDnpO';
 const DATA_API = 'https://api.github.com/repos/giantsand26/patient-list/contents/data.json';
 const DATA_RAW = 'https://raw.githubusercontent.com/giantsand26/patient-list/main/data.json';
 let patients = [];
 let currentTab = 'pending';
-let dataSha = null; // GitHub 文件 SHA，更新时需要
+let dataSha = null;
 let editingId = null;
 let selectedIds = new Set();
 
 async function loadData() {
-  // 从 GitHub API 读取（即时更新，无缓存延迟）
+  // 从 GitHub API 读取
   try {
     const resp = await fetch(DATA_API + '?t=' + Date.now(), {
       headers: { 'Authorization': 'token ' + GH_TOKEN, 'Accept': 'application/vnd.github.v3+json' },
@@ -786,37 +786,23 @@ async function loadData() {
       return;
     }
   } catch (e) {}
-  // 回退本地缓存
-  try {
-    const raw = localStorage.getItem('patient_list_data');
-    patients = raw ? JSON.parse(raw) : [];
-  } catch (e) { patients = []; }
+  try { const raw = localStorage.getItem('patient_list_data'); patients = raw ? JSON.parse(raw) : []; } catch (e) { patients = []; }
 }
 
 async function saveData() {
   localStorage.setItem('patient_list_data', JSON.stringify(patients));
   try {
     if (!dataSha) {
-      const getResp = await fetch(DATA_API, {
-        headers: { 'Authorization': 'token ' + GH_TOKEN, 'Accept': 'application/vnd.github.v3+json' }
-      });
-      if (getResp.ok) {
-        dataSha = (await getResp.json()).sha;
-      }
+      const getResp = await fetch(DATA_API, { headers: { 'Authorization': 'token ' + GH_TOKEN }});
+      if (getResp.ok) dataSha = (await getResp.json()).sha;
     }
     const content = encodeBase64(JSON.stringify({ patients: patients }));
     const putResp = await fetch(DATA_API, {
       method: 'PUT',
-      headers: {
-        'Authorization': 'token ' + GH_TOKEN,
-        'Accept': 'application/vnd.github.v3+json',
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Authorization': 'token ' + GH_TOKEN, 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: '更新', content: content, sha: dataSha })
     });
-    if (putResp.ok) {
-      dataSha = (await putResp.json()).content.sha;
-    }
+    if (putResp.ok) dataSha = (await putResp.json()).content.sha;
   } catch (e) {}
 }
 
