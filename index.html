@@ -761,7 +761,7 @@ html, body {
 
 <script>
 // ==================== 数据管理（GitHub 云端存储） ====================
-const GH_TOKEN = 'ghp_' + 'Bc9Qn5kKW0b11lUomW6hwMwtJQsbzY4EDnpO';
+const TOKEN_STORAGE_KEY = 'patient_list_github_token';
 const DATA_API = 'https://api.github.com/repos/giantsand26/patient-list-data/contents/data.json';
 const DATA_RAW = 'https://raw.githubusercontent.com/giantsand26/patient-list/main/data.json';
 let patients = [];
@@ -770,11 +770,22 @@ let dataSha = null;
 let editingId = null;
 let selectedIds = new Set();
 
+function getGithubToken() {
+  let token = localStorage.getItem(TOKEN_STORAGE_KEY);
+  if (!token) {
+    token = prompt('请输入 GitHub 访问令牌（只保存在本机浏览器）');
+    if (token) localStorage.setItem(TOKEN_STORAGE_KEY, token.trim());
+  }
+  return token ? token.trim() : '';
+}
+
 async function loadData() {
   // 从 GitHub API 读取
   try {
+    const token = getGithubToken();
+    if (!token) throw new Error('未提供 GitHub 访问令牌');
     const resp = await fetch(DATA_API + '?t=' + Date.now(), {
-      headers: { 'Authorization': 'token ' + GH_TOKEN, 'Accept': 'application/vnd.github.v3+json' },
+      headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json' },
       cache: 'no-store'
     });
     if (resp.ok) {
@@ -792,14 +803,16 @@ async function loadData() {
 async function saveData() {
   localStorage.setItem('patient_list_data', JSON.stringify(patients));
   try {
+    const token = getGithubToken();
+    if (!token) throw new Error('未提供 GitHub 访问令牌');
     if (!dataSha) {
-      const getResp = await fetch(DATA_API, { headers: { 'Authorization': 'token ' + GH_TOKEN }});
+      const getResp = await fetch(DATA_API, { headers: { 'Authorization': 'Bearer ' + token }});
       if (getResp.ok) dataSha = (await getResp.json()).sha;
     }
     const content = encodeBase64(JSON.stringify({ patients: patients }));
     const putResp = await fetch(DATA_API, {
       method: 'PUT',
-      headers: { 'Authorization': 'token ' + GH_TOKEN, 'Content-Type': 'application/json' },
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', 'Accept': 'application/vnd.github+json' },
       body: JSON.stringify({ message: '更新', content: content, sha: dataSha })
     });
     if (putResp.ok) dataSha = (await putResp.json()).content.sha;
