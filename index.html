@@ -668,6 +668,7 @@ html, body {
     <span class="header-count" id="headerCount">0 人</span>
     <button class="header-btn" id="btnSearch" title="搜索">🔍</button>
     <button class="header-btn" id="btnParse" title="粘贴解析">📋</button>
+    <button class="header-btn" id="btnAuth" title="GitHub 授权">🔑</button>
   </header>
 
   <!-- 搜索栏 -->
@@ -841,6 +842,7 @@ const $$ = (sel) => document.querySelectorAll(sel);
 const app = $('#app');
 const mainContent = $('#mainContent');
 const headerCount = $('#headerCount');
+const btnAuth = $('#btnAuth');
 const searchBar = $('#searchBar');
 const searchInput = $('#searchInput');
 const searchClear = $('#searchClear');
@@ -1202,6 +1204,14 @@ $('#btnSave').onclick = async function() {
   await saveData();
   closeModal();
   renderList();
+};
+
+btnAuth.onclick = function() {
+  const token = prompt('请输入新的 GitHub 访问令牌（只保存在本机浏览器）');
+  if (!token || !token.trim()) return;
+  localStorage.setItem(TOKEN_STORAGE_KEY, token.trim());
+  dataSha = null;
+  loadData().then(renderList);
 };
 
 $('#btnCancel').onclick = closeModal;

@@ -1,5 +1,5 @@
 // Service Worker — 离线缓存
-const CACHE_NAME = 'patient-list-v1';
+const CACHE_NAME = 'patient-list-v2';
 const FILES_TO_CACHE = [
   'index.html',
   'manifest.json',
