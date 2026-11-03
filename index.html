@@ -455,6 +455,11 @@ html, body {
   color: var(--color-text-tertiary);
   cursor: not-allowed;
 }
+.bottom-bar .share-selected-btn { white-space: nowrap; padding: 10px 12px; flex-shrink: 0; }
+.bottom-bar .selected-count { font-size: 12px; }
+.patient-card .card-actions { flex-wrap: wrap; }
+.patient-card .card-header { flex-wrap: wrap; }
+.patient-card .card-name { overflow-wrap: anywhere; min-width: 0; }
 
 /* ========== 弹窗遮罩 ========== */
 .modal-overlay {
@@ -679,6 +684,8 @@ html, body {
   box-shadow: var(--shadow-lg);
 }
 .toast.show { transform: translateX(-50%) translateY(0); }
+.toast { max-width: calc(100vw - 24px); white-space: normal; overflow-wrap: anywhere; }
+.sync-status { padding: 10px 16px; background: #fef2f2; color: #991b1b; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; flex-shrink: 0; }
 
 /* ========== 响应式微调 ========== */
 @media (min-width: 481px) {
@@ -699,6 +706,7 @@ html, body {
     <button class="header-btn auth-btn" id="btnAuth" title="GitHub 授权">授权</button>
   </header>
 
+  <div id="syncStatus" class="sync-status" role="status" hidden></div>
   <!-- 搜索栏 -->
   <div class="search-bar" id="searchBar">
     <div class="search-input-wrap">
@@ -804,6 +812,15 @@ let patients = [];
 let currentTab = 'pending';
 let dataSha = null;
 let cloudReady = false;
+let syncing = false;
+let confirmedPatients = [];
+let cloudDocument = {};
+
+function canMutate() {
+  if (syncing) { showToast('正在同步，请稍候'); return false; }
+  if (!cloudReady) { reportSyncError('云端尚未成功加载，请先重新授权或刷新；本次操作未保存。'); return false; }
+  return true;
+}
 let editingId = null;
 let selectedIds = new Set();
 
@@ -817,10 +834,37 @@ function getGithubToken() {
 }
 
 function reportSyncError(message) {
+  const status = document.getElementById('syncStatus');
+  status.textContent = message;
+  status.hidden = false;
   showToast('⚠️ ' + message);
 }
 
+function githubError(status) {
+  if (status === 404) return '云端读取失败（404）：令牌可能未获准访问 patient-list-data，或仓库中的 data.json 不存在。请检查令牌所选仓库和 Contents 权限。';
+  if (status === 401) return '授权失败（401）：令牌无效或已过期，请重新授权。';
+  if (status === 403) return '访问受限（403）：请检查 Contents 权限；也可能是 GitHub 暂时限制请求。';
+  if (status === 409) return '云端名单已更新（409），请刷新后重试。';
+  if (status === 429) return '请求过于频繁（429），请稍后重试。';
+  return 'GitHub 请求失败（' + status + '），请稍后重试。';
+}
+
+async function githubFetch(url, options) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try { return await fetch(url, { ...options, signal: controller.signal }); }
+  finally { clearTimeout(timer); }
+}
+
 function normalizePatients(list) {
+  const ids = new Set();
+  for (const p of list) {
+    if (!p || typeof p.id !== 'string' || !p.id || ids.has(p.id) || typeof p.name !== 'string' ||
+      (p.gender != null && typeof p.gender !== 'string') ||
+      (p.admissionDate != null && typeof p.admissionDate !== 'string') ||
+      (p.notified != null && typeof p.notified !== 'boolean')) throw new Error('数据格式错误');
+    ids.add(p.id);
+  }
   return list.map(p => ({ ...p, isNewPatient: p.isNewPatient === true }));
 }
 
@@ -838,78 +882,102 @@ function loadLocalData() {
 }
 
 async function loadData() {
+  if (syncing) return false;
+  syncing = true;
   cloudReady = false;
   dataSha = null;
   const hasLocalBackup = loadLocalData();
+  try {
   const token = getGithubToken();
   if (!token) {
+    syncing = false;
     reportSyncError(hasLocalBackup ? '未授权，当前显示本机备份' : '未授权，无法读取云端数据');
     return false;
   }
-  try {
-    const resp = await fetch(DATA_API + '?t=' + Date.now(), {
+    const resp = await githubFetch(DATA_API + '?t=' + Date.now(), {
       headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json' },
       cache: 'no-store'
     });
     if (!resp.ok) {
-      reportSyncError(resp.status === 401 || resp.status === 403 ? 'Token 无效或权限不足' : `云端读取失败（${resp.status}）`);
+      reportSyncError(githubError(resp.status));
       return false;
     }
     const info = await resp.json();
     const decoded = JSON.parse(decodeBase64(info.content));
     if (!decoded || !Array.isArray(decoded.patients)) throw new Error('数据格式错误');
+    if (typeof info.sha !== 'string' || !info.sha) throw new Error('数据格式错误');
+    const validated = normalizePatients(decoded.patients);
+    localStorage.setItem(LOCAL_DATA_KEY, JSON.stringify(validated));
     dataSha = info.sha;
-    patients = normalizePatients(decoded.patients);
-    localStorage.setItem(LOCAL_DATA_KEY, JSON.stringify(patients));
+    patients = validated;
+    cloudDocument = decoded;
+    confirmedPatients = JSON.parse(JSON.stringify(patients));
     cloudReady = true;
+    document.getElementById('syncStatus').hidden = true;
     return true;
   } catch (e) {
-    reportSyncError(hasLocalBackup ? '云端读取失败，当前显示本机备份' : '网络异常，未加载云端数据');
+    const reason = e instanceof SyntaxError || e.message === '数据格式错误'
+      ? '云端数据格式不兼容，已停止同步，请勿覆盖 data.json。'
+      : '云端读取失败：可能是网络、数据解码或本机存储异常。';
+    reportSyncError(reason + (hasLocalBackup ? '当前显示本机备份。' : '尚未完成云端加载。'));
     return false;
+  } finally {
+    syncing = false;
   }
 }
 
 async function saveData() {
+  if (syncing) return false;
   if (!cloudReady || !dataSha) {
     loadLocalData();
     reportSyncError('云端数据未完整加载，为防覆盖，本次修改未保存');
     return false;
   }
-  const token = localStorage.getItem(TOKEN_STORAGE_KEY)?.trim() || '';
+  let token;
+  try { token = localStorage.getItem(TOKEN_STORAGE_KEY)?.trim() || ''; }
+  catch { patients = JSON.parse(JSON.stringify(confirmedPatients)); reportSyncError('无法读取本机授权，本次修改未保存。'); return false; }
   if (!token) {
     cloudReady = false;
     loadLocalData();
     reportSyncError('授权已失效，为防覆盖，本次修改未保存');
     return false;
   }
+  syncing = true;
+  const snapshot = JSON.parse(JSON.stringify(patients));
   try {
     const headers = { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json' };
-    const latest = await fetch(DATA_API, { headers, cache: 'no-store' });
-    if (!latest.ok) throw new Error('无法获取云端文件版本');
+    const latest = await githubFetch(DATA_API, { headers, cache: 'no-store' });
+    if (!latest.ok) throw new Error(githubError(latest.status));
     const latestInfo = await latest.json();
     if (latestInfo.sha !== dataSha) {
       cloudReady = false;
-      loadLocalData();
+      patients = JSON.parse(JSON.stringify(confirmedPatients));
       reportSyncError('云端名单已在其他位置更新，请刷新后重试');
       return false;
     }
 
-    const putResp = await fetch(DATA_API, {
+    const putResp = await githubFetch(DATA_API, {
       method: 'PUT',
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: '更新患者名单', content: encodeBase64(JSON.stringify({ patients })), sha: dataSha })
+      body: JSON.stringify({ message: '更新患者名单', content: encodeBase64(JSON.stringify({ ...cloudDocument, patients: snapshot })), sha: dataSha })
     });
     if (!putResp.ok) {
-      throw new Error(putResp.status === 401 || putResp.status === 403 ? 'Token 无效或没有写入权限' : `云端保存失败（${putResp.status}）`);
+      throw new Error(githubError(putResp.status));
     }
     dataSha = (await putResp.json()).content.sha;
-    localStorage.setItem(LOCAL_DATA_KEY, JSON.stringify(patients));
+    confirmedPatients = snapshot;
+    patients = JSON.parse(JSON.stringify(snapshot));
+    try { localStorage.setItem(LOCAL_DATA_KEY, JSON.stringify(snapshot)); }
+    catch { reportSyncError('云端已保存，但本机备份失败，请检查浏览器存储空间。'); }
     return true;
   } catch (e) {
     cloudReady = false;
-    loadLocalData();
-    reportSyncError(e.message || '网络异常，云端未保存');
+    patients = JSON.parse(JSON.stringify(confirmedPatients));
+    reportSyncError('同步未确认，请刷新核对云端后再操作。' + (e.message || '网络异常'));
     return false;
+  } finally {
+    syncing = false;
+    renderList();
   }
 }
 
@@ -920,7 +988,9 @@ function generateId() {
 // UTF-8 Base64 编解码（处理中文）
 function encodeBase64(str) {
   const bytes = new TextEncoder().encode(str);
-  return btoa(String.fromCharCode(...bytes));
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+  return btoa(binary);
 }
 function decodeBase64(b64) {
   const bin = atob(b64);
@@ -971,8 +1041,8 @@ function showConfirm(title, desc, onConfirm) {
     <div class="confirm-overlay" id="confirmOverlay">
       <div class="confirm-dialog">
         <div class="confirm-icon">⚠️</div>
-        <div class="confirm-title">${title}</div>
-        <div class="confirm-desc">${desc}</div>
+        <div class="confirm-title">${escHtml(title)}</div>
+        <div class="confirm-desc">${escHtml(desc)}</div>
         <div class="confirm-actions">
           <button class="btn btn-secondary" id="confirmCancel">取消</button>
           <button class="btn btn-danger" id="confirmOk">确认删除</button>
@@ -1048,8 +1118,20 @@ function renderList() {
   // 绑定卡片事件
   $$('.patient-card').forEach(card => {
     const id = card.dataset.id;
+    const newPatientCheck = card.querySelector('.new-patient-check');
+    if (newPatientCheck) newPatientCheck.onchange = async function() {
+      if (!canMutate()) { renderList(); return; }
+      const patient = patients.find(p => p.id === id);
+      if (!patient) return;
+      patient.isNewPatient = this.checked;
+      const saved = await saveData();
+      if (saved) showToast(patient.isNewPatient ? '已标记为新患' : '已取消新患标记');
+    };
     card.onclick = function(e) {
-      if (e.target.closest('.select-check')) {
+      if (e.target.closest('.new-patient-label')) {
+        e.stopPropagation();
+        return;
+      } else if (e.target.closest('.select-check')) {
         toggleSelect(id);
       } else if (e.target.closest('.notify-btn')) {
         e.stopPropagation();
@@ -1068,27 +1150,31 @@ function renderList() {
 }
 
 function renderCard(p) {
+  const safeId = escHtml(p.id);
   const selectedClass = selectedIds.has(p.id) ? ' selected' : '';
   const notifiedClass = p.notified ? ' notified' : '';
   const genderClass = p.gender === '女' ? 'female' : 'male';
   const dateDisplay = p.admissionDate ? formatDate(p.admissionDate) : '';
   const cardActions = p.notified
     ? `<div class="card-actions">
-        <button class="card-action-btn undo-btn" data-id="${p.id}">↩ 撤销</button>
+        <button class="card-action-btn undo-btn" data-id="${safeId}">↩ 撤销</button>
       </div>`
     : `<div class="card-actions">
-        <button class="card-action-btn notify-btn" data-id="${p.id}">✅ 已通知</button>
-        <button class="card-action-btn edit-btn" data-id="${p.id}">✏️</button>
+        <label class="new-patient-label" style="display:flex;align-items:center;gap:6px;padding:6px;font-size:13px;cursor:pointer;">
+          <input class="new-patient-check" type="checkbox" aria-label="新患" ${p.isNewPatient === true ? 'checked' : ''} style="width:20px;height:20px;accent-color:var(--color-success);" ${syncing || !cloudReady ? 'disabled' : ''}>新患
+        </label>
+        <button class="card-action-btn notify-btn" data-id="${safeId}">✅ 已通知</button>
+        <button class="card-action-btn edit-btn" data-id="${safeId}">✏️</button>
       </div>`;
   return `
-    <div class="patient-card${selectedClass}${notifiedClass}" data-id="${p.id}">
+    <div class="patient-card${selectedClass}${notifiedClass}" data-id="${safeId}">
       <div class="select-check">✓</div>
       <div class="card-body">
         <div class="card-header">
           <span class="card-name">${escHtml(p.name)}</span>
-          <span class="card-gender ${genderClass}">${p.gender || '男'}</span>
+          <span class="card-gender ${genderClass}">${escHtml(p.gender || '男')}</span>
           ${p.isNewPatient === true ? '<span class="card-new">新患</span>' : ''}
-          ${dateDisplay ? `<span style="font-size:12px;color:var(--color-text-tertiary);margin-left:auto;">📅 ${dateDisplay}</span>` : ''}
+          ${dateDisplay ? `<span style="font-size:12px;color:var(--color-text-tertiary);margin-left:auto;">📅 ${escHtml(dateDisplay)}</span>` : ''}
         </div>
         ${cardActions}
       </div>
@@ -1096,9 +1182,7 @@ function renderCard(p) {
 }
 
 function escHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
+  return String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 function formatDate(dateStr) {
@@ -1109,6 +1193,7 @@ function formatDate(dateStr) {
 
 // ==================== 已通知标记 ====================
 async function markNotified(id) {
+  if (!canMutate()) return;
   const p = patients.find(p => p.id === id);
   if (!p) return;
   p.notified = true;
@@ -1118,6 +1203,7 @@ async function markNotified(id) {
 }
 
 async function undoNotified(id) {
+  if (!canMutate()) return;
   const p = patients.find(p => p.id === id);
   if (!p) return;
   p.notified = false;
@@ -1291,6 +1377,7 @@ function validateForm(data) {
 
 // ==================== 保存 / 删除 ====================
 $('#btnSave').onclick = async function() {
+  if (!canMutate()) return;
   const data = getFormData();
   if (!validateForm(data)) return;
   const isEditing = editingId !== null;
@@ -1317,9 +1404,11 @@ $('#btnSave').onclick = async function() {
 };
 
 btnAuth.onclick = function() {
+  if (syncing) { showToast('正在同步，请稍候'); return; }
   const token = prompt('请输入新的 GitHub 访问令牌（只保存在本机浏览器）');
   if (!token || !token.trim()) return;
-  localStorage.setItem(TOKEN_STORAGE_KEY, token.trim());
+  try { localStorage.setItem(TOKEN_STORAGE_KEY, token.trim()); }
+  catch { reportSyncError('浏览器无法保存授权，请检查存储设置。'); return; }
   dataSha = null;
   loadData().then(renderList);
 };
@@ -1380,6 +1469,7 @@ $('#btnParseDo').onclick = function() {
   };
 
   $('#btnParseSave').onclick = async function() {
+    if (!canMutate()) return;
     const cbs = document.querySelectorAll('.parse-check');
     const selected = [];
     cbs.forEach(c => {
@@ -1412,16 +1502,16 @@ function parsePatients(text) {
   let m;
   while ((m = prefixRe.exec(text)) !== null) {
     const name = m[0];
-    if (!seen.has(name) && badEnd.indexOf(name[1]) === -1) {
+    if ((m.index === 0 || !/[一-龥]/.test(text[m.index - 1])) && surnames.includes(name[1]) && !seen.has(name) && badEnd.indexOf(name[1]) === -1) {
       seen.add(name);
       results.push({ name, admissionDate: findDate(text, m.index) });
     }
   }
 
   // 策略2: 姓氏 + 1个中文字（2字名，如"张三"）
-  const nameRe2 = new RegExp('([' + surnames + '])([一-龥])', 'g');
+  const nameRe2 = new RegExp('([' + surnames + '])([一-龥])([一-龥])?', 'g');
   while ((m = nameRe2.exec(text)) !== null) {
-    const name = m[1] + m[2];
+    const name = m[1] + m[2] + (m[3] && !badEnd.includes(m[3]) ? m[3] : '');
     // 排除: 周+数字(周一~周日), 姓氏+常见非名用字
     const bad2 = /^周[一二三四五六日天]$/;
     if (!seen.has(name) && badEnd.indexOf(m[2]) === -1 && !bad2.test(name)) {
@@ -1445,17 +1535,24 @@ function parsePatients(text) {
 }
 
 function findDate(text, pos) {
-  const ctx = text.substring(Math.max(0,pos-30), Math.min(text.length,pos+60));
+  const lineStart = text.lastIndexOf('\n', pos) + 1;
+  const nextLine = text.indexOf('\n', pos);
+  const ctx = text.slice(lineStart, nextLine === -1 ? text.length : nextLine);
   // 绝对日期: 2026-06-30 或 2026年6月30日
   let m = ctx.match(/(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})/);
   if (m) return m[1] + '-' + m[2].padStart(2,'0') + '-' + m[3].padStart(2,'0');
+  m = ctx.match(/(\d{1,2})月(\d{1,2})日?/);
+  if (m) return new Date().getFullYear() + '-' + m[1].padStart(2,'0') + '-' + m[2].padStart(2,'0');
   // 几号: 15号、15日（已过则下月）
   m = ctx.match(/(\d{1,2})[号日]/);
   if (m) {
     const now = new Date();
     const day = parseInt(m[1]);
+    if (day < 1 || day > 31) return null;
+    now.setHours(0, 0, 0, 0);
     let d = new Date(now.getFullYear(), now.getMonth(), day);
     if (d < now) d = new Date(now.getFullYear(), now.getMonth()+1, day);
+    if (d.getDate() !== day) return null;
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(day).padStart(2,'0');
   }
   // 下周 + 星期几
@@ -1502,7 +1599,7 @@ function getRelativeDate(days) {
 }
 function getNextWeekday(dayOfWeek) {
   const d = new Date();
-  const diff = (dayOfWeek + 7 - d.getDay()) % 7 || 7;
+  const diff = 7 - ((d.getDay() + 6) % 7) + ((dayOfWeek + 6) % 7);
   d.setDate(d.getDate() + diff);
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
 }
