@@ -668,7 +668,6 @@ html, body {
     <span class="header-count" id="headerCount">0 人</span>
     <button class="header-btn" id="btnSearch" title="搜索">🔍</button>
     <button class="header-btn" id="btnParse" title="粘贴解析">📋</button>
-    <button class="header-btn auth-btn" id="btnAuth" title="GitHub 授权">授权</button>
   </header>
 
   <!-- 搜索栏 -->
@@ -747,7 +746,7 @@ html, body {
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-danger" id="btnDelete" style="display:none;" disabled>删除</button>
+      <button class="btn btn-danger" id="btnDelete" style="display:none;">删除</button>
       <button class="btn btn-secondary" id="btnCancel">取消</button>
       <button class="btn btn-primary" id="btnSave">保存</button>
     </div>
@@ -762,90 +761,49 @@ html, body {
 
 <script>
 // ==================== 数据管理（GitHub 云端存储） ====================
-const TOKEN_STORAGE_KEY = 'patient_list_github_token';
+const GH_TOKEN = 'ghp_' + 'Bc9Qn5kKW0b11lUomW6hwMwtJQsbzY4EDnpO';
 const DATA_API = 'https://api.github.com/repos/giantsand26/patient-list-data/contents/data.json';
+const DATA_RAW = 'https://raw.githubusercontent.com/giantsand26/patient-list/main/data.json';
 let patients = [];
 let currentTab = 'pending';
 let dataSha = null;
 let editingId = null;
 let selectedIds = new Set();
 
-function getGithubToken() {
-  let token = localStorage.getItem(TOKEN_STORAGE_KEY);
-  if (!token) {
-    token = prompt('请输入 GitHub 访问令牌（只保存在本机浏览器）');
-    if (token) localStorage.setItem(TOKEN_STORAGE_KEY, token.trim());
-  }
-  return token ? token.trim() : '';
-}
-
-function reportSyncError(message) {
-  showToast('⚠️ ' + message);
-}
-
 async function loadData() {
-  const token = getGithubToken();
-  if (!token) {
-    reportSyncError('未授权，无法读取云端数据');
-    return false;
-  }
+  // 从 GitHub API 读取
   try {
     const resp = await fetch(DATA_API + '?t=' + Date.now(), {
-      headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json' },
+      headers: { 'Authorization': 'token ' + GH_TOKEN, 'Accept': 'application/vnd.github.v3+json' },
       cache: 'no-store'
     });
-    if (!resp.ok) {
-      reportSyncError(resp.status === 401 || resp.status === 403 ? 'Token 无效或权限不足' : `云端读取失败（${resp.status}）`);
-      return false;
+    if (resp.ok) {
+      const info = await resp.json();
+      dataSha = info.sha;
+      const decoded = JSON.parse(decodeBase64(info.content));
+      patients = decoded.patients || [];
+      localStorage.setItem('patient_list_data', JSON.stringify(patients));
+      return;
     }
-    const info = await resp.json();
-    const decoded = JSON.parse(decodeBase64(info.content));
-    if (!decoded || !Array.isArray(decoded.patients)) throw new Error('数据格式错误');
-    dataSha = info.sha;
-    patients = decoded.patients;
-    localStorage.setItem('patient_list_data', JSON.stringify(patients));
-    return true;
-  } catch (e) {
-    reportSyncError('网络异常，未加载云端数据');
-    return false;
-  }
+  } catch (e) {}
+  try { const raw = localStorage.getItem('patient_list_data'); patients = raw ? JSON.parse(raw) : []; } catch (e) { patients = []; }
 }
 
 async function saveData() {
   localStorage.setItem('patient_list_data', JSON.stringify(patients));
-  const token = getGithubToken();
-  if (!token) {
-    reportSyncError('未授权，数据只保存在本机');
-    return false;
-  }
   try {
-    const headers = { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json' };
-    let latest = await fetch(DATA_API, { headers, cache: 'no-store' });
-    if (latest.ok) dataSha = (await latest.json()).sha;
-    if (!dataSha) throw new Error('无法获取云端文件版本');
-
-    const put = async () => fetch(DATA_API, {
+    if (!dataSha) {
+      const getResp = await fetch(DATA_API, { headers: { 'Authorization': 'token ' + GH_TOKEN }});
+      if (getResp.ok) dataSha = (await getResp.json()).sha;
+    }
+    const content = encodeBase64(JSON.stringify({ patients: patients }));
+    const putResp = await fetch(DATA_API, {
       method: 'PUT',
-      headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: '更新患者名单', content: encodeBase64(JSON.stringify({ patients })), sha: dataSha })
+      headers: { 'Authorization': 'token ' + GH_TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: '更新', content: content, sha: dataSha })
     });
-    let putResp = await put();
-    if (putResp.status === 409) {
-      latest = await fetch(DATA_API, { headers, cache: 'no-store' });
-      if (!latest.ok) throw new Error('云端版本更新失败');
-      dataSha = (await latest.json()).sha;
-      putResp = await put();
-    }
-    if (!putResp.ok) {
-      reportSyncError(putResp.status === 401 || putResp.status === 403 ? 'Token 无效或没有写入权限' : `云端保存失败（${putResp.status}）`);
-      return false;
-    }
-    dataSha = (await putResp.json()).content.sha;
-    return true;
-  } catch (e) {
-    reportSyncError('网络异常，云端未保存');
-    return false;
-  }
+    if (putResp.ok) dataSha = (await putResp.json()).content.sha;
+  } catch (e) {}
 }
 
 function generateId() {
@@ -870,7 +828,6 @@ const $$ = (sel) => document.querySelectorAll(sel);
 const app = $('#app');
 const mainContent = $('#mainContent');
 const headerCount = $('#headerCount');
-const btnAuth = $('#btnAuth');
 const searchBar = $('#searchBar');
 const searchInput = $('#searchInput');
 const searchClear = $('#searchClear');
@@ -1032,18 +989,18 @@ async function markNotified(id) {
   const p = patients.find(p => p.id === id);
   if (!p) return;
   p.notified = true;
-  const saved = await saveData();
+  await saveData();
   renderList();
-  if (saved) showToast('✅ 已标记为已通知');
+  showToast('✅ 已标记为已通知');
 }
 
 async function undoNotified(id) {
   const p = patients.find(p => p.id === id);
   if (!p) return;
   p.notified = false;
-  const saved = await saveData();
+  await saveData();
   renderList();
-  if (saved) showToast('↩ 已撤销，回到待通知');
+  showToast('↩ 已撤销，回到待通知');
 }
 
 // ==================== 标签切换 ====================
@@ -1218,6 +1175,7 @@ $('#btnSave').onclick = async function() {
     const idx = patients.findIndex(p => p.id === editingId);
     if (idx !== -1) {
       patients[idx] = { ...patients[idx], ...data };
+      showToast('✅ 已更新');
     }
   } else {
     patients.unshift({
@@ -1225,21 +1183,12 @@ $('#btnSave').onclick = async function() {
       ...data,
       createdAt: new Date().toISOString(),
     });
+    showToast('✅ 已添加');
   }
 
-  const saved = await saveData();
-  if (!saved) return;
+  await saveData();
   closeModal();
   renderList();
-  showToast(editingId ? '✅ 已更新' : '✅ 已添加');
-};
-
-btnAuth.onclick = function() {
-  const token = prompt('请输入新的 GitHub 访问令牌（只保存在本机浏览器）');
-  if (!token || !token.trim()) return;
-  localStorage.setItem(TOKEN_STORAGE_KEY, token.trim());
-  dataSha = null;
-  loadData().then(renderList);
 };
 
 $('#btnCancel').onclick = closeModal;
@@ -1250,7 +1199,20 @@ modalOverlay.onclick = function(e) {
 };
 
 $('#btnDelete').onclick = function() {
-  showToast('为保护数据，删除功能已关闭');
+  if (!editingId) return;
+  const p = patients.find(p => p.id === editingId);
+  if (!p) return;
+  showConfirm(
+    '确认删除',
+    '确定要删除患者 <strong>' + escHtml(p.name) + '</strong> 的记录吗？此操作不可撤销。',
+    async function() {
+      patients = patients.filter(p => p.id !== editingId);
+      await saveData();
+      closeModal();
+      renderList();
+      showToast('已删除');
+    }
+  );
 };
 
 // ==================== 粘贴解析 ====================
@@ -1303,8 +1265,7 @@ $('#btnParseDo').onclick = function() {
     selected.forEach(r => {
       patients.unshift({ id: generateId(), name: r.name, gender: '男', admissionDate: r.admissionDate||'', notified: false, createdAt: new Date().toISOString() });
     });
-    const saved = await saveData();
-    if (!saved) return;
+    await saveData();
     $('#parseOverlay').style.display = 'none';
     renderList();
     showToast('✅ 已录入 ' + selected.length + ' 名患者');
@@ -1472,9 +1433,6 @@ document.addEventListener('keydown', function(e) {
 async function init() {
   await loadData();
   renderList();
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
-  }
 }
 
 init();
